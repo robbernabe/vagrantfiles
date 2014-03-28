@@ -1,0 +1,55 @@
+# -*- mode: ruby -*-
+# vi: set ft=ruby :
+#
+# Multi-machine Vagrantfile inspired by https://gist.github.com/markba/2404910
+
+Vagrant.configure("2") do |config|
+
+  boxes = [
+    { :name => :standalone, :ip => "192.168.33.200", :http_fwd => 8080, :https_fwd => 8443},
+    { :name => :app01,      :ip => "192.168.33.100", :http_fwd => 8880 , :https_fwd => 4443 },
+    { :name => :db01,       :ip => "192.168.33.101" },
+    { :name => :db02,       :ip => "192.168.33.102" },
+    { :name => :bastion01,  :ip => "192.168.33.103" },
+  ]
+
+  vm_default = proc do |cnf|
+    cnf.vm.box = "precise64"
+    cnf.vm.box_url = "http://files.vagrantup.com/precise64.box"
+  end
+
+  puppet_default = proc do |puppet|
+    puppet.manifest_file  = "site.pp"
+    puppet.manifests_path = "manifests"
+    puppet.module_path    = "modules"
+    puppet.options        = "--verbose --debug"
+  end
+
+  boxes.each do |opts|
+    config.vm.define opts[:name] do |config|
+      vm_default.call(config)
+
+      config.vm.provider "virtualbox" do |vb|
+        vb.customize ["modifyvm", :id, "--memory", "768"]
+        vb.gui = true if opts[:gui]
+      end
+
+      if opts[:name].to_s == 'standalone'
+        config.vm.host_name = "standalone.local"
+      else
+        config.vm.host_name = "%s.local" % opts[:name].to_s
+      end
+
+      config.vm.network     "forwarded_port", guest: 80, host: opts[:http_fwd] if opts[:http_fwd]
+      config.vm.network     "forwarded_port", guest: 443, host: opts[:https_fwd] if opts[:https_fwd]
+      config.vm.network     "private_network", ip: opts[:ip]
+      config.vm.provision   :shell, path: "install-puppet.sh"
+
+      config.vm.provision   :puppet do |puppet|
+        puppet_default.call(puppet)
+      end
+
+    end
+  end
+
+end
